@@ -3,11 +3,12 @@
 # ==============================================
 
 import logging
+import base64
 from datetime import datetime, timedelta
 from decimal import Decimal
 
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -20,13 +21,14 @@ from keyboards.client import (
     back_to_main_keyboard,
 )
 from texts.client import get_message
-from utils.helpers import generate_uuid, format_money
+from utils.helpers import generate_uuid
 from config import (
     MIN_RECHARGE_VALUE,
     RECHARGE_BONUS_PERCENT,
     MIN_BONUS_VALUE,
     PIX_EXPIRATION_MINUTES,
 )
+from services.payment_gateway import create_pix_payment
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -88,7 +90,7 @@ async def processar_valor(message: Message, state: FSMContext):
         valor = Decimal(message.text.replace(",", "."))
         if valor < Decimal(str(MIN_RECHARGE_VALUE)):
             raise ValueError
-    except (ValueError, InvalidOperation):
+    except (ValueError, Exception):
         await message.answer(
             f"❌ Valor inválido.\n"
             f"🔻 Recarga mínima: R$ {MIN_RECHARGE_VALUE:.2f}\n"
@@ -103,8 +105,14 @@ async def processar_valor(message: Message, state: FSMContext):
 
     user_id = message.from_user.id
 
+    # Cria cobrança PIX no gateway
+    dados_pix = await create_pix_payment(
+        valor=float(valor),
+        user_id=user_id,
+        description="Recarga Larizinha Store",
+    )
+
     async with async_session() as session:
-        # Cria registro de pagamento PIX
         pagamento = PagamentoPix(
             id=generate_uuid(),
             user_id=user_id,
@@ -112,15 +120,14 @@ async def processar_valor(message: Message, state: FSMContext):
             valor=valor,
             bonus=bonus,
             status="pendente",
-            codigo_pix="00020101021226830014BR.GOV.BCB.PIX...",
-            qr_code_base64=None,
-            txid=None,
+            codigo_pix=dados_pix.get("codigo_pix"),
+            qr_code_base64=dados_pix.get("qr_code_base64"),
+            txid=dados_pix.get("txid"),
             data_criacao=datetime.now(),
-            data_expiracao=datetime.now() + timedelta(minutes=PIX_EXPIRATION_MINUTES),
+            data_expiracao=dados_pix.get("data_expiracao") or (datetime.now() + timedelta(minutes=PIX_EXPIRATION_MINUTES)),
         )
         session.add(pagamento)
 
-        # Registra log
         log = Log(
             user_id=user_id,
             acao="pix_recarga_gerado",
@@ -129,29 +136,43 @@ async def processar_valor(message: Message, state: FSMContext):
         session.add(log)
         await session.commit()
 
-        # Busca saldo atual
         user = await session.get(User, user_id)
         saldo_atual = float(user.saldo) if user else 0.0
 
     saldo_apos = saldo_atual + float(valor) + float(bonus)
 
-    # Monta mensagem PIX
     texto = get_message(
         "pix_gerado",
         minutos=PIX_EXPIRATION_MINUTES,
         valor=f"{float(valor):.2f}",
         payment_id=pagamento.id,
-        codigo_pix=pagamento.codigo_pix,
+        codigo_pix=pagamento.codigo_pix or "",
         saldo=f"{saldo_atual:.2f}",
         bonus=f"{float(bonus):.2f}",
         saldo_apos=f"{saldo_apos:.2f}",
     )
 
-    # Envia mensagem com botões de aguardar pagamento
-    await message.answer(
-        texto,
-        reply_markup=payment_waiting_keyboard(str(pagamento.id), pagamento.codigo_pix),
-    )
+    # Envia QR Code como imagem se disponível
+    if pagamento.qr_code_base64:
+        try:
+            qr_bytes = base64.b64decode(pagamento.qr_code_base64)
+            photo = BufferedInputFile(qr_bytes, filename="qrcode.png")
+            await message.answer_photo(
+                photo=photo,
+                caption=texto,
+                reply_markup=payment_waiting_keyboard(str(pagamento.id), pagamento.codigo_pix or ""),
+            )
+        except Exception:
+            logger.exception("Erro ao enviar QR code como imagem.")
+            await message.answer(
+                texto,
+                reply_markup=payment_waiting_keyboard(str(pagamento.id), pagamento.codigo_pix or ""),
+            )
+    else:
+        await message.answer(
+            texto,
+            reply_markup=payment_waiting_keyboard(str(pagamento.id), pagamento.codigo_pix or ""),
+        )
 
     await state.clear()
 
