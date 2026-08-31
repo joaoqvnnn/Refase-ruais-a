@@ -1,0 +1,36 @@
+# ==============================================
+# LARIZINHA STORE - DEPENDÊNCIAS DO PROJETO
+# ==============================================
+
+# ---------- BOT (Telegram) ----------
+aiogram>=3.0.0,<4.0.0
+
+# ---------- BANCO DE DADOS ----------
+sqlalchemy>=2.0.0
+asyncpg>=0.29.0
+alembic>=1.12.0
+
+# ---------- VARIÁVEIS DE AMBIENTE ----------
+python-dotenv>=1.0.0
+
+# ---------- PAGAMENTO (Mercado Pago) ----------
+mercadopago>=2.2.0
+
+# ---------- TAREFAS ASSÍNCRONAS (CELERY + REDIS) ----------
+celery>=5.3.0
+redis>=5.0.0
+
+# ---------- VALIDAÇÃO ----------
+pydantic>=2.0.0
+
+# ---------- EMAIL (SMTP) ----------
+aiosmtplib>=3.0.0
+
+# ---------- GRÁFICOS (ESTATÍSTICAS) ----------
+matplotlib>=3.8.0
+
+# ---------- WEBHOOK / HTTP ----------
+aiohttp>=3.9.0
+
+# ---------- MANIPULAÇÃO DE IMAGENS ----------
+pillow>=10.0.0
