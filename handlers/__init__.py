@@ -1,10 +1,8 @@
-# ==============================================
-# PACOTE HANDLERS
-# ==============================================
-# Este pacote contém os handlers do bot, divididos em:
-#   - client/   -> funcionalidades para o cliente final
-#   - admin/    -> funcionalidades do painel administrativo
-#
-# Este arquivo está vazio e serve apenas para marcar
-# o diretório como um pacote Python.
-# ==============================================
+from handlers.admin.broadcast import router as broadcast_router
+from handlers.client.withdraw_pix import router as withdraw_pix_router
+
+# dentro de setup_routers, cliente:
+root.include_router(withdraw_pix_router)
+
+# e no setup_admin_routers (handlers/admin/__init__.py):
+router.include_router(broadcast_router)
